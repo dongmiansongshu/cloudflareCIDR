@@ -1,111 +1,153 @@
-import os
-import shutil
+#!/usr/bin/env python3
+"""
+Robust rewrite of CloudflareCIDR-main.py:
+- download zip to a temporary directory
+- extract safely
+- locate `as/*/ipv4-aggregated.txt` files for specified ASNs
+- validate IPv4 CIDR entries using ipaddress
+- write outputs to Clash/CloudflareCIDR.list and CloudflareCIDR.txt
+- log progress and failures, avoid uncaught FileNotFoundError
+"""
+import sys
+import logging
+import tempfile
 import zipfile
+from pathlib import Path
 import requests
-import re
-import errno
-import stat
+import ipaddress
 
-url = "https://github.com/ipverse/asn-ip/archive/refs/heads/master.zip"
-zip_name = "master.zip"
+# Config
+URL = "https://github.com/ipverse/asn-ip/archive/refs/heads/master.zip"
+INCLUDED_ASNS = {'209242', '13335', '149648', '132892', '139242', '202623', '203898', '394536'}
+TIMEOUT = 30  # seconds for requests
 
-# 输出目录与文件
-os.makedirs("Clash", exist_ok=True)  # 确保 Clash 目录存在
-clash_path = os.path.join("Clash", "CloudflareCIDR.list")
-cidr_path = "CloudflareCIDR.txt"
+# Output paths
+CLASH_DIR = Path("Clash")
+CLASH_FILE = CLASH_DIR / "CloudflareCIDR.list"
+CIDR_FILE = Path("CloudflareCIDR.txt")
 
-included_asns = ['209242', '13335', '149648', '132892', '139242', '202623', '203898', '394536']
-ip_addresses = []
+# Setup logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s: %(message)s",
+)
 
+def download_zip(dest: Path) -> None:
+    logging.info("Downloading %s -> %s", URL, dest)
+    resp = requests.get(URL, timeout=TIMEOUT)
+    resp.raise_for_status()
+    dest.write_bytes(resp.content)
+    logging.info("Downloaded %d bytes", dest.stat().st_size)
 
-def _on_rm_error(func, path, exc_info):
-    """错误回调：仅在文件已不存在(ENOENT) 时忽略；处理权限错误后重试，否则重新抛出。"""
-    exc = exc_info[1]
-    err_no = getattr(exc, 'errno', None)
-    if err_no == errno.ENOENT:
-        # 文件/目录已经不存在，忽略
-        return
-    if err_no == errno.EACCES:
-        # 尝试移除写保护并重试一次
-        try:
-            os.chmod(path, stat.S_IWUSR)
-            func(path)
-            return
-        except Exception:
-            pass
-    # 未知错误，重新抛出
-    raise
+def find_extracted_root(extract_dir: Path) -> Path | None:
+    # Prefer a single top-level folder; fallback to any folder containing 'asn-ip' in name
+    entries = [p for p in extract_dir.iterdir() if p.is_dir()]
+    if len(entries) == 1:
+        return entries[0]
+    for p in entries:
+        if "asn-ip" in p.name:
+            return p
+    # fallback: try to find 'as' subdir anywhere
+    for p in extract_dir.rglob("as"):
+        if p.is_dir():
+            return p.parent
+    return None
 
-
-def safe_rmtree(path):
-    """安全地删除目录：存在时删除，race condition 或权限问题时尽量恢复。
-    不会因目录在删除前被并发移除而抛出 FileNotFoundError。
+def collect_ips(as_root: Path) -> set:
     """
+    Locate the 'as' directory under as_root and collect ipv4-aggregated.txt
+    for included ASNs.
+    """
+    result = set()
+    as_dir = as_root / "as"
+    if not as_dir.exists():
+        # try to find 'as' dir recursively
+        found = list(as_root.rglob("as"))
+        if found:
+            as_dir = found[0]
+        else:
+            raise FileNotFoundError(f"No 'as' directory found under {as_root}")
+    logging.info("Searching AS directory: %s", as_dir)
+    for child in as_dir.iterdir():
+        if not child.is_dir():
+            continue
+        asn = child.name.strip()
+        if asn not in INCLUDED_ASNS:
+            continue
+        file_path = child / "ipv4-aggregated.txt"
+        if not file_path.exists():
+            logging.warning("Expected file missing: %s", file_path)
+            continue
+        logging.info("Reading %s (ASN %s)", file_path, asn)
+        for line in file_path.read_text(encoding="utf-8", errors="ignore").splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            result.add(line)
+    return result
+
+def validate_cidrs(entries: set) -> list:
+    valid = []
+    for e in sorted(entries):
+        try:
+            net = ipaddress.ip_network(e, strict=False)
+            if net.version != 4:
+                logging.debug("Skipping non-IPv4 network: %s", e)
+                continue
+            valid.append(str(net))
+        except Exception:
+            logging.warning("Invalid CIDR ignored: %s", e)
+    # dedupe and keep stable order
+    seen = set()
+    out = []
+    for n in valid:
+        if n in seen:
+            continue
+        seen.add(n)
+        out.append(n)
+    return out
+
+def write_outputs(cidr_list: list) -> None:
+    CLASH_DIR.mkdir(parents=True, exist_ok=True)
+    logging.info("Writing %d CIDRs to %s and %s", len(cidr_list), CLASH_FILE, CIDR_FILE)
+    with CLASH_FILE.open("w", encoding="utf-8") as cf, CIDR_FILE.open("w", encoding="utf-8") as tf:
+        for cidr in cidr_list:
+            cf.write(f"IP-CIDR,{cidr},no-resolve\n")
+            tf.write(f"{cidr}\n")
+
+def main() -> int:
     try:
-        if os.path.islink(path):
-            # 处理符号链接
-            os.unlink(path)
-            return
-        if os.path.isdir(path):
-            shutil.rmtree(path, onerror=_on_rm_error)
-    except FileNotFoundError:
-        # 已被移除，忽略
-        pass
-
-
-try:
-    # 下载 zip 文件
-    r = requests.get(url, timeout=30)
-    r.raise_for_status()  # 如果状态不是 200-299，会抛异常
-    with open(zip_name, "wb") as f:
-        f.write(r.content)
-
-    # 解压 zip 到当前目录
-    with zipfile.ZipFile(zip_name, 'r') as zip_ref:
-        zip_ref.extractall(".")
-
-        # 尝试从 zip 列表推断根目录（通常是 asn-ip-master 或 asn-ip-<sha>）
-        names = zip_ref.namelist()
-        root_dirs = [n.split('/')[0] for n in names if n and '/' in n]
-        root_dirs = list(dict.fromkeys(root_dirs))  # 去重且保留顺序
-        root = root_dirs[0] if root_dirs else "asn-ip-master"
-
-    # 遍历 as 目录（注意使用 os.path.join）
-    as_dir = os.path.join(root, "as")
-    for root_dir, dirs, files in os.walk(as_dir):
-        if 'ipv4-aggregated.txt' in files:
-            asn = os.path.basename(root_dir)
-            if asn in included_asns:
-                with open(os.path.join(root_dir, 'ipv4-aggregated.txt'), 'r') as file:
-                    ips = file.read().splitlines()
-                    ip_addresses.extend(ips)
-
-    # 匹配 IPv4/CIDR 的简单正则
-    ipv4_regex = re.compile(r'^(\d{1,3}\.){3}\d{1,3}(/\d{1,2})$')
-
-    # 写入结果文件
-    with open(clash_path, 'w') as clash_file, open(cidr_path, 'w') as cidr_file:
-        for ip in ip_addresses:
-            if ipv4_regex.match(ip):
-                clash_file.write(f"IP-CIDR,{ip},no-resolve\n")
-                cidr_file.write(f"{ip}\n")
-            else:
-                # 如果不是标准 CIDR，按原脚本保留一行（或可以改为跳过）
-                clash_file.write(f"{ip}\n")
-
-finally:
-    # 清理下载和解压的文件夹，使用安全删除函数以避免 FileNotFoundError
-    try:
-        if os.path.isfile(zip_name):
-            os.remove(zip_name)
+        with tempfile.TemporaryDirectory() as td:
+            tempdir = Path(td)
+            zip_path = tempdir / "asn-ip-master.zip"
+            download_zip(zip_path)
+            logging.info("Extracting zip to %s", tempdir)
+            with zipfile.ZipFile(zip_path, "r") as zf:
+                zf.extractall(tempdir)
+            root = find_extracted_root(tempdir)
+            if root is None:
+                logging.error("Could not locate extracted repository root under %s", tempdir)
+                return 1
+            logging.info("Using extracted root: %s", root)
+            raw_entries = collect_ips(root)
+            logging.info("Collected %d raw entries", len(raw_entries))
+            cidrs = validate_cidrs(raw_entries)
+            logging.info("%d valid IPv4 CIDR entries", len(cidrs))
+            write_outputs(cidrs)
+        logging.info("Done.")
+        return 0
+    except requests.RequestException as e:
+        logging.exception("Network/download error: %s", e)
+        return 2
+    except FileNotFoundError as e:
+        logging.exception("File error: %s", e)
+        return 3
+    except zipfile.BadZipFile as e:
+        logging.exception("Bad zip file: %s", e)
+        return 4
     except Exception as e:
-        print(f"Warning: 删除 {zip_name} 时出错: {e}")
+        logging.exception("Unexpected error: %s", e)
+        return 5
 
-    try:
-        # 如果我们推断出的 root 存在则删除
-        if 'root' in locals():
-            safe_rmtree(root)
-        # 兜底判断常见目录名：使用 ignore_errors=True，按用户要求（选项C）避免因目录不存在失败
-        shutil.rmtree("asn-ip-master", ignore_errors=True)
-    except Exception as e:
-        print(f"Warning: 删除解压目录时出错: {e}")
+if __name__ == "__main__":
+    sys.exit(main())
