@@ -3,6 +3,8 @@ import shutil
 import zipfile
 import requests
 import re
+import errno
+import stat
 
 url = "https://github.com/ipverse/asn-ip/archive/refs/heads/master.zip"
 zip_name = "master.zip"
@@ -14,6 +16,42 @@ cidr_path = "CloudflareCIDR.txt"
 
 included_asns = ['209242', '13335', '149648', '132892', '139242', '202623', '203898', '394536']
 ip_addresses = []
+
+
+def _on_rm_error(func, path, exc_info):
+    """错误回调：仅在文件已不存在(ENOENT) 时忽略；处理权限错误后重试，否则重新抛出。"""
+    exc = exc_info[1]
+    err_no = getattr(exc, 'errno', None)
+    if err_no == errno.ENOENT:
+        # 文件/目录已经不存在，忽略
+        return
+    if err_no == errno.EACCES:
+        # 尝试移除写保护并重试一次
+        try:
+            os.chmod(path, stat.S_IWUSR)
+            func(path)
+            return
+        except Exception:
+            pass
+    # 未知错误，重新抛出
+    raise
+
+
+def safe_rmtree(path):
+    """安全地删除目录：存在时删除，race condition 或权限问题时尽量恢复。
+    不会因目录在删除前被并发移除而抛出 FileNotFoundError。
+    """
+    try:
+        if os.path.islink(path):
+            # 处理符号链接
+            os.unlink(path)
+            return
+        if os.path.isdir(path):
+            shutil.rmtree(path, onerror=_on_rm_error)
+    except FileNotFoundError:
+        # 已被移除，忽略
+        pass
+
 
 try:
     # 下载 zip 文件
@@ -56,7 +94,7 @@ try:
                 clash_file.write(f"{ip}\n")
 
 finally:
-    # 清理下载和解压的文件夹，先检查是否存在（避免抛 FileNotFoundError）
+    # 清理下载和解压的文件夹，使用安全删除函数以避免 FileNotFoundError
     try:
         if os.path.isfile(zip_name):
             os.remove(zip_name)
@@ -65,14 +103,9 @@ finally:
 
     try:
         # 如果我们推断出的 root 存在则删除
-        if 'root' in locals() and os.path.isdir(root):
-            shutil.rmtree(root)
-        else:
-            # 兜底判断常见目录名
-            if os.path.isdir("asn-ip-master"):
-                shutil.rmtree("asn-ip-master")
-    except FileNotFoundError:
-        # 已被删除或不存在，忽略
-        pass
+        if 'root' in locals():
+            safe_rmtree(root)
+        # 兜底判断常见目录名
+        safe_rmtree("asn-ip-master")
     except Exception as e:
         print(f"Warning: 删除解压目录时出错: {e}")
