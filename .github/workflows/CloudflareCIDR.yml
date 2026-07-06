@@ -1,9 +1,11 @@
 name: 更新 Clash/CloudflareCIDR.list
+permissions:
+  contents: write
 
 on:
   schedule:
-    - cron: '5 * * * 2'  # 每周二 UTC 每小时第 5 分钟执行（北京时间周二 08:05 至周三 07:05，每小时一次）
-  workflow_dispatch:  # 允许手动触发
+    - cron: '5 * * * 2'  # 每周二 UTC 每小时第 5 分钟执行
+  workflow_dispatch:
 
 jobs:
   download-and-commit:
@@ -11,15 +13,18 @@ jobs:
 
     steps:
     - name: Checkout Repository
-      uses: actions/checkout@v2
+      uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
 
     - name: Set up Python
-      uses: actions/setup-python@v2
+      uses: actions/setup-python@v4
       with:
-        python-version: '3.x'  # 选择 Python 版本
+        python-version: '3.x'
 
     - name: Install requests library
       run: |
+        python -m pip install --upgrade pip
         pip install requests
 
     - name: Download File
@@ -30,14 +35,14 @@ jobs:
         git config --local user.email "action@github.com"
         git config --local user.name "GitHub Action"
         git add .
-        
+
         # 检查是否有变更
         if git diff --cached --quiet; then
           echo "没有文件变更，跳过提交"
         else
           echo "检测到文件变更，开始提交"
-          git commit -m "Downloaded file on $(date "+%Y/%m/%d %H:%M:%S")"
-          git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{github.repository}}.git
+          git commit -m "Downloaded file on $(date \"+%Y/%m/%d %H:%M:%S\")"
+          # 使用 actions/checkout@v3 默认保留的凭证（GITHUB_TOKEN）进行推送
           git push
           echo "提交完成"
         fi
