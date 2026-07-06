@@ -105,7 +105,7 @@ finally:
         # 如果我们推断出的 root 存在则删除
         if 'root' in locals():
             safe_rmtree(root)
-        # 兜底判断常见目录名
-        safe_rmtree("asn-ip-master")
+        # 兜底判断常见目录名：使用 ignore_errors=True，按用户要求（选项C）避免因目录不存在失败
+        shutil.rmtree("asn-ip-master", ignore_errors=True)
     except Exception as e:
         print(f"Warning: 删除解压目录时出错: {e}")
