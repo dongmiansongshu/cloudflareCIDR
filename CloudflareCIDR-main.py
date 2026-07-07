@@ -22,7 +22,7 @@ INCLUDED_ASNS = {'209242', '13335', '149648', '132892', '139242', '202623', '203
 TIMEOUT = 30  # seconds for requests
 
 # Output paths
-CLASH_DIR = Path("Clash")
+CLASH_DIR = Path("CloudflareCIDRlist")
 CLASH_FILE = CLASH_DIR / "CloudflareCIDR.list"
 CIDR_FILE = Path("CloudflareCIDR.txt")
 
