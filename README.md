@@ -16,7 +16,7 @@
   - GitHub Actions 工作流，用于定时（或手动触发）运行脚本并在有更新时提交生成的文件到仓库。工作流使用 actions/checkout 和 setup-python，并依赖仓库的默认 GITHUB_TOKEN 来推送变更。
 
 - Clash/CloudflareCIDR.list
-  - 供 Clash 使用的规则文件，格式为 `IP-CIDR,<cidr>,no-resolve`。
+  - 供cla使用的规则文件，格式为 `IP-CIDR,<cidr>,no-resolve`。
 
 - CloudflareCIDR.txt
   - 纯 CIDR 列表（每行一个网段），便于其它工具或脚本使用。
