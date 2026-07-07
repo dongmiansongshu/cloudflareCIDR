@@ -112,7 +112,7 @@ def write_outputs(cidr_list: list) -> None:
     logging.info("Writing %d CIDRs to %s and %s", len(cidr_list), CLASH_FILE, CIDR_FILE)
     with CLASH_FILE.open("w", encoding="utf-8") as cf, CIDR_FILE.open("w", encoding="utf-8") as tf:
         for cidr in cidr_list:
-            cf.write(f"IP-CIDR,{cidr},no-resolve\n")
+            cf.write(f"IP-CIDR,{cidr}\n")
             tf.write(f"{cidr}\n")
 
 def main() -> int:
