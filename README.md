@@ -27,7 +27,7 @@
 2. 在解压目录中查找 `as/` 目录，遍历包含的 ASN 子目录（脚本中通过 INCLUDED_ASNS 集合控制要包含的 ASN）。  
 3. 逐个读取 `ipv4-aggregated.txt` 文件，忽略注释/空行，收集所有条目。  
 4. 使用 ipaddress.ip_network(..., strict=False) 解析每个条目，只保留 IPv4 网络，忽略解析失败的条目并记录日志。  
-5. 去重并按稳定顺序输出到 `Clash/CloudflareCIDR.list` 和 `CloudflareCIDR.txt`。  
+5. 去重并按稳定顺序输出到 `CloudflareCIDRlist/CloudflareCIDR.list` 和 `CloudflareCIDR.txt`。  
 6. 工作流运行脚本后会检测仓库是否有变更（git diff），若有则使用 GITHUB_TOKEN 提交并推送更新。
 
 ## 使用
