@@ -6,7 +6,7 @@
 
 - CloudflareCIDR-main.py
   - 主脚本，定期从远端仓库下载 ASN-to-IP 的 ZIP 包，提取并筛选出指定 ASN 下的 ipv4-aggregated.txt 文件中的 IPv4 网段，验证并规范化 CIDR 后写入：
-    - Clash/CloudflareCIDR.list（每行格式：IP-CIDR,<cidr>,no-resolve）
+    - Clash/CloudflareCIDR.list（每行格式：IP-CIDR,<cidr>）
     - CloudflareCIDR.txt（纯 CIDR 列表，每行一个）
   - 校验要点：使用 Python 标准库 ipaddress 对 CIDR 进行解析与过滤（仅保留 IPv4），忽略注释与空行，去重并保持稳定顺序。
   - 下载来源：脚本默认使用 https://github.com/ipverse/asn-ip 的 master 分支 ZIP（配置在脚本中）。
@@ -16,7 +16,7 @@
   - GitHub Actions 工作流，用于定时（或手动触发）运行脚本并在有更新时提交生成的文件到仓库。工作流使用 actions/checkout 和 setup-python，并依赖仓库的默认 GITHUB_TOKEN 来推送变更。
 
 - Clash/CloudflareCIDR.list
-  - 供cla使用的规则文件，格式为 `IP-CIDR,<cidr>,no-resolve`。
+  - 供cla使用的规则文件，格式为 `IP-CIDR,<cidr>`。
 
 - CloudflareCIDR.txt
   - 纯 CIDR 列表（每行一个网段），便于其它工具或脚本使用。
