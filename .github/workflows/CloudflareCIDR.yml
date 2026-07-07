@@ -1,4 +1,4 @@
-name: 更新 Clash/CloudflareCIDR.list
+name: 更新 CloudflareCIDRlist/CloudflareCIDR.list
 permissions:
   contents: write
 
