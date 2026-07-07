@@ -18,7 +18,7 @@ import ipaddress
 
 # Config
 URL = "https://github.com/ipverse/asn-ip/archive/refs/heads/master.zip"
-INCLUDED_ASNS = {'209242', '13335', '149648', '132892', '139242', '202623', '203898', '394536'}
+INCLUDED_ASNS = {'13335', '14789', '132892', '133877', '139242', '202623', '203898', '209242', '394536', '395747'}
 TIMEOUT = 30  # seconds for requests
 
 # Output paths
